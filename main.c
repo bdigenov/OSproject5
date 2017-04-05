@@ -16,6 +16,7 @@ how to use the page table and disk interfaces.
 #include <errno.h>
 #include <time.h>
 
+
 //Define struct for keeping track of page/frame pairs
 typedef struct Node {
     int page;
@@ -47,35 +48,36 @@ void push_front(const int page, node_t **head){
 	head = tmp;
 }
 
+
 //Define Globals
-int npages;
-int nframes;
-char *algorithm;
-char *program;
-struct disk *disk;
-char *virtmem;
-char *physmem;
-int fill_count;
-int* frames;
-//struct List lru;
+int npages;			//Number of Pages 
+int nframes;		//Number of frames 
+char *algorithm;	//Algorithm inputted by user
+char *program;		//Program inputted by user
+struct disk *disk;	//Virtual Disk 
+char *virtmem;		//Virtual Memory storage
+char *physmem;		//Physical Memory storage
+int fill_count;		//Amount of frames that have been filled
+int* frames;		//Frame storage
+int num_disk_write; //Counts number of writes to disk
+int num_disk_read;	//Counts number of reads from disk
+int page_fault;		//Counts number of page faults 
+
 node_t *head = NULL;
 head = malloc(sizeof(node_t));
-
 void page_fault_handler( struct page_table *pt, int page ){
 	int bits;
 	int frame;
-	
+	page_fault++;
 
 	page_table_get_entry(pt, page, &frame, &bits);
-	printf("Frame: %d, Bits: %d\n", frame,bits);
-	if (bits == 0) { //not in memory - must grab from disk and check if there is space in memory to put it - if not must perform replacement of some kind
+	if (bits == 0) { 
 		//Fill up page table initially
 		if (fill_count < nframes){
 			page_table_set_entry(pt, page, fill_count, PROT_READ); 
 			frames[fill_count] = page;
-			printf("FRAME #%d HOLDS PAGE #%d PAGE IS: %d \n", fill_count, frames[fill_count],page);
 			disk_read(disk, page, &physmem[fill_count*PAGE_SIZE]);
-			printf("NOT LOADED: page fault on page #%d\n",page);
+			num_disk_read++;
 			fill_count++;
 			page_table_print(pt);
 			if(!strcmp(algorithm,"custom")) {
@@ -85,61 +87,59 @@ void page_fault_handler( struct page_table *pt, int page ){
 		}
 
 		else {
-				printf("NO ROOM: page fault on page #%d\n",page);
 			if(!strcmp(algorithm,"rand")) {
 				//Randomly pick frame to send page to 
 				int n = rand() % (nframes);
-				printf("SENT TO FRAME: %d\n",n);
 
 				//Check if the frame getting kicked out has been written to
 				page_table_get_entry(pt, frames[n], &frame, &bits);
-				if(bits == 2) {
+				if(bits == 3) {
 					disk_write(disk, frames[n], &physmem[frame*PAGE_SIZE]);
+					num_disk_write++;
 					disk_read(disk, page, &physmem[frame*PAGE_SIZE]);
+					num_disk_read++;
 					page_table_set_entry(pt, page, frame, PROT_READ);
 					page_table_set_entry(pt, frames[n], frame, 0);
-					printf("FRAME #%d USED TO HOLD %d\n",frame, frames[n]);
 					frames[n] = page; //Update the page frame tracker 
-					printf("FRAME #%d NOW HOLDS %d\n", frame, frames[n]);
 				}
 
 				else{
 					//If it has been written to, write it back to disk 
 					page_table_set_entry(pt, page, frame, PROT_WRITE | PROT_READ);
 					disk_read(disk, page, &physmem[frame*PAGE_SIZE]);
+					num_disk_read++;
 					page_table_set_entry(pt, frames[n], frame, 0);
 					frames[n] = page; //Update the page frame tracker 
-					page_table_print(pt);
 				}
-
+				//printf("PAGE TABLE\n");
+				//page_table_print(pt);
 				return;
 			}
 			else if(!strcmp(algorithm,"fifo")) {
-				
 				int n = fill_count % nframes;
-				printf("SENT TO FRAME: %d\n",n);
-
 				//Check if the frame getting kicked out has been written to
 				page_table_get_entry(pt, frames[n], &frame, &bits);
-				if(bits == 2) {
+				if(bits == 3) {
 					disk_write(disk, frames[n], &physmem[frame*PAGE_SIZE]);
+					num_disk_write++;
 					disk_read(disk, page, &physmem[frame*PAGE_SIZE]);
+					num_disk_read++;
 					page_table_set_entry(pt, page, frame, PROT_READ);
 					page_table_set_entry(pt, frames[n], frame, 0);
-					printf("FRAME #%d USED TO HOLD %d\n",frame, frames[n]);
 					frames[n] = page; //Update the page frame tracker 
-					printf("FRAME #%d NOW HOLDS %d\n", frame, frames[n]);
 				}
 
 				else{
 					//If it has been written to, write it back to disk 
 					page_table_set_entry(pt, page, frame, PROT_WRITE | PROT_READ);
 					disk_read(disk, page, &physmem[frame*PAGE_SIZE]);
+					num_disk_read++;
 					page_table_set_entry(pt, frames[n], frame, 0);
 					frames[n] = page; //Update the page frame tracker 
-					page_table_print(pt);
 				}
 				fill_count++;
+				//printf("PAGE TABLE\n");
+				//page_table_print(pt);
 				return;
 			}
 			
@@ -205,7 +205,7 @@ void page_fault_handler( struct page_table *pt, int page ){
 		}
 		
 		
-		printf("NO WRITE ACCESS: page fault on page #%d\n",page);
+		//printf("NO WRITE ACCESS: page fault on page #%d\n",page);
 		return;
 	}			
 	exit(1);
@@ -215,7 +215,7 @@ int main( int argc, char *argv[] )
 {
 	fill_count = 0;
 	if(argc!=5) {
-		printf("use: virtmem <npages> <nframes> <rand|fifo|lru|custom> <sort|scan|focus>\n");
+		printf("use: virtmem <npages> <nframes> <rand|fifo|custom> <sort|scan|focus>\n");
 		return 1;
 	}
 	srand(time(0));
@@ -224,6 +224,9 @@ int main( int argc, char *argv[] )
 	nframes = atoi(argv[2]);
 	algorithm = argv[3];
 	program = argv[4];
+	num_disk_write = 0;
+	num_disk_read = 0;
+	page_fault = 0;
 
 	// Make the array bigger
 	int* more_frames = realloc(frames, nframes * sizeof(int));
@@ -260,6 +263,9 @@ int main( int argc, char *argv[] )
 		return 1;
 	}
 
+	printf("PAGE FAULTS: %d\n", page_fault);
+	printf("DISK WRITES: %d\n", num_disk_write);
+	printf("DISK READS: %d\n",num_disk_read);
 	page_table_delete(pt);
 	disk_close(disk);
 
