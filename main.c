@@ -173,51 +173,71 @@ void page_fault_handler( struct page_table *pt, int page ){
 				//int prevworked = 0;
 				//int resethead = 0;
 				int half = 0;
-				while(curr->next != 0){
-					if(curr->next->next == 0){
-						replacepage = curr->next->page;
-						free(curr->next);
-						curr->next = 0;
-						
-						page_table_get_entry(pt, replacepage, &frame, &bits);
-						if(bits == 3){
-							disk_write(disk, replacepage, &physmem[frame*PAGE_SIZE]);
-							num_disk_write++;
-						}
-						disk_read(disk, page, &physmem[frame*PAGE_SIZE]);
-						num_disk_read++;
-						page_table_set_entry(pt, page, frame, PROT_READ);
-						page_table_set_entry(pt, replacepage, frame, 0);
-						
-						tmp->page = page;
-						tmp->written = 0;
-						//tmp->next = head;
-						tmp->next = currfollow->next;
-						//tmp->prev = currfollow;
-						currfollow->next = tmp;
-						//currfollow->next->prev = tmp;
-						//head->prev = tmp;
-						//tmp->prev = 0;
-						//head = tmp;
-						//curr->written = 0;
-						//curr->next->page = page;
-						break;					
+				if(nframes == 2){
+					replacepage = head->next->page;
+					free(head->next);
+					head->next = 0;
+					page_table_get_entry(pt, replacepage, &frame, &bits);
+					if(bits == 3){
+						disk_write(disk, replacepage, &physmem[frame*PAGE_SIZE]);
+						num_disk_write++;
 					}
-					curr = curr->next;
-					if(half){
-						currfollow = currfollow->next;
-						half = 0;
-					} else {
-						half = 1;
+					disk_read(disk, page, &physmem[frame*PAGE_SIZE]);
+					num_disk_read++;
+					page_table_set_entry(pt, page, frame, PROT_READ);
+					page_table_set_entry(pt, replacepage, frame, 0);
+					tmp->page = page;
+					tmp->written = 0;
+					tmp->next = head;
+					head = tmp;
+				} else {
+					while(curr->next != 0){
+						if(curr->next->next == 0){
+							replacepage = curr->next->page;
+							free(curr->next);
+							curr->next = 0;
+							
+							page_table_get_entry(pt, replacepage, &frame, &bits);
+							if(bits == 3){
+								disk_write(disk, replacepage, &physmem[frame*PAGE_SIZE]);
+								num_disk_write++;
+							}
+							disk_read(disk, page, &physmem[frame*PAGE_SIZE]);
+							num_disk_read++;
+							page_table_set_entry(pt, page, frame, PROT_READ);
+							page_table_set_entry(pt, replacepage, frame, 0);
+							
+							tmp->page = page;
+							tmp->written = 0;
+							//tmp->next = head;
+							tmp->next = currfollow->next;
+							//tmp->prev = currfollow;
+							currfollow->next = tmp;
+							//currfollow->next->prev = tmp;
+							//head->prev = tmp;
+							//tmp->prev = 0;
+							//head = tmp;
+							//curr->written = 0;
+							//curr->next->page = page;
+							break;					
+						}
+						curr = curr->next;
+						if(half){
+							currfollow = currfollow->next;
+							half = 0;
+						} else {
+							half = 1;
+						}
 					}
 				}
-				//printf("PAGE TABLE (non write fault):\n");
-				//page_table_print(pt);
-				//printf("non write fault changed linked list:\n");
-				//printf("prevworked:%i, prev:%i\n", prevworked, prev);
-				//print_list();
+					//printf("PAGE TABLE (non write fault):\n");
+					//page_table_print(pt);
+					//printf("non write fault changed linked list:\n");
+					//printf("prevworked:%i, prev:%i\n", prevworked, prev);
+					//print_list();
 				return;
 			}
+			
 
 			else {
 				printf("Invalid Algorithm Choice\n");
