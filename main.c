@@ -22,16 +22,16 @@ struct node_t {
     int page;
 	int written;
     struct node_t *next;
-	struct node_t *prev;
+	//struct node_t *prev;
 };
 
 void push_front(int page, struct node_t **head){
-	printf("int push_front with page %i\n", page);
+	//printf("int push_front with page %i\n", page);
 	struct node_t *tmp = malloc(sizeof(struct node_t));
 	tmp->page = page;
 	tmp->written = 0;
 	tmp->next = *head;
-	tmp->prev = 0;
+	//tmp->prev = 0;
 	*head = tmp;
 }
 
@@ -52,6 +52,7 @@ int* frames;		//Frame storage
 int num_disk_write; //Counts number of writes to disk
 int num_disk_read;	//Counts number of reads from disk
 int page_fault;		//Counts number of page faults 
+int writer;
 
 int headset;
 struct node_t *head = NULL;
@@ -61,7 +62,7 @@ struct node_t *head = NULL;
 void print_list(){
 	struct node_t *curr = head;
 	while(curr != 0){
-		printf("%i, ", curr->page);
+		printf("%i:%i, ", curr->page, curr->written);
 		curr = curr->next;
 	}
 	printf("\n");
@@ -86,16 +87,16 @@ void page_fault_handler( struct page_table *pt, int page ){
 			fill_count++;
 			//page_table_print(pt);
 			if(!strcmp(algorithm,"custom")) {
-				printf("in custom\n");
+				//printf("in custom\n");
 				if(head == NULL){
 					head = malloc(sizeof(struct node_t));
-					printf("malloc done \n");
+					//printf("malloc done \n");
 					headset = 1;
 					head->page = page;
 					head->written = 0;
 					head->next = 0;
-					head->prev = 0;
-					printf("head is set\n");
+					//head->prev = 0;
+					//printf("head is set\n");
 				} else {
 					
 					push_front(page, &head);
@@ -166,13 +167,43 @@ void page_fault_handler( struct page_table *pt, int page ){
 			else if(!strcmp(algorithm,"custom")) {
 				int replacepage;
 				struct node_t *curr = head;
+				struct node_t *currfollow = curr;
 				struct node_t *tmp = malloc(sizeof(*tmp));
-				int prev = 0;
-				int prevworked = 0;
+				//int prev = 0;
+				//int prevworked = 0;
+				//int resethead = 0;
+				int half = 0;
 				while(curr->next != 0){
 					if(curr->next->next == 0){
+						replacepage = curr->next->page;
+						free(curr->next);
+						curr->next = 0;
 						
-						if(curr->next->written == 0 || prev){
+						page_table_get_entry(pt, replacepage, &frame, &bits);
+						if(bits == 3){
+							disk_write(disk, replacepage, &physmem[frame*PAGE_SIZE]);
+							num_disk_write++;
+						}
+						disk_read(disk, page, &physmem[frame*PAGE_SIZE]);
+						num_disk_read++;
+						page_table_set_entry(pt, page, frame, PROT_READ);
+						page_table_set_entry(pt, replacepage, frame, 0);
+						
+						tmp->page = page;
+						tmp->written = 0;
+						//tmp->next = head;
+						tmp->next = currfollow->next;
+						//tmp->prev = currfollow;
+						currfollow->next = tmp;
+						//currfollow->next->prev = tmp;
+						//head->prev = tmp;
+						//tmp->prev = 0;
+						//head = tmp;
+						//curr->written = 0;
+						//curr->next->page = page;
+						break;
+						
+						/*if(curr->next->written == 0 || prev == 1){
 							replacepage = curr->next->page;
 							free(curr->next);
 							curr->next = 0;
@@ -186,15 +217,22 @@ void page_fault_handler( struct page_table *pt, int page ){
 							num_disk_read++;
 							page_table_set_entry(pt, page, frame, PROT_READ);
 							page_table_set_entry(pt, replacepage, frame, 0);
+							
 							tmp->page = page;
 							tmp->written = 0;
-							tmp->next = head;
-							head->prev = tmp;
-							tmp->prev = 0;
-							head = tmp;
+							//tmp->next = head;
+							tmp->next = currfollow->next;
+							tmp->prev = currfollow;
+							currfollow->next = currfollow->next->next;
+							currfollow->next->prev = tmp;
+							//head->prev = tmp;
+							//tmp->prev = 0;
+							//head = tmp;
+							//curr->written = 0;
+							//curr->next->page = page;
 							break;
 						} else {
-							while(curr->prev != 0){
+							while(curr != 0){
 								if(curr->written == 0){
 									replacepage = curr->page;
 									
@@ -222,21 +260,44 @@ void page_fault_handler( struct page_table *pt, int page ){
 								}
 								curr = curr->prev;
 							}
-							if(prevworked){
+							if(prevworked == 1){
 								break;
 							} else {
 								prev = 1;
+								resethead = 1;
+								curr = head;
 							}
-						}
+						}*/
 						
 						
 					}
 					curr = curr->next;
+					if(half){
+						currfollow = currfollow->next;
+						half = 0;
+					} else {
+						half = 1;
+					}
+					/*if(resethead){
+						curr = head;
+						currfollow = curr;
+						resethead = 0;
+					} else {
+						if(half){
+							currfollow = currfollow->next;
+							half = 0;
+						} else {
+							half = 1;
+						}
+						curr = curr->next;
+					}*/
+					
 				}
-				printf("PAGE TABLE:\n");
-				page_table_print(pt);
-				printf("linked list:\n");
-				print_list();
+				//printf("PAGE TABLE (non write fault):\n");
+				//page_table_print(pt);
+				//printf("non write fault changed linked list:\n");
+				//printf("prevworked:%i, prev:%i\n", prevworked, prev);
+				//print_list();
 				return;
 			}
 
@@ -253,30 +314,37 @@ void page_fault_handler( struct page_table *pt, int page ){
 		page_table_set_entry(pt, page, frame, PROT_READ|PROT_WRITE); //If pagefault was lack of write access, set write access 
 		
 		if(!strcmp(algorithm,"custom")){
+			//printf("within write\n");
 			struct node_t *curr = head;
 			struct node_t *tmp = malloc(sizeof(*tmp));
-			while(curr != 0){ // move used frame to the front of the linked list
-				if(curr->next != 0){
-					if(curr->next->page == page){
-						tmp->page = page;
-						tmp->next = curr->next->next;
-						free(curr->next);
-						curr->next = tmp->next;
-						tmp->next = head;
-						tmp->prev = 0;
-						head->prev = tmp;
-						tmp->written = 1;
-						head = tmp;
-						break;
-					}
-				} 
-				
-				curr = curr->next;
+			if(curr->page == page){
+				writer++;
+				//head->written = 1;
+			} else {
+				while(curr != 0){ // move used frame to the front of the linked list
+					if(curr->next != 0){
+						if(curr->next->page == page){
+							tmp->page = page;
+							tmp->next = curr->next->next;
+							free(curr->next);
+							curr->next = tmp->next;
+							tmp->next = head;
+							//tmp->prev = 0;
+							//head->prev = tmp;
+							tmp->written = 1;
+							head = tmp;
+							break;
+						}
+					} 
+					
+					curr = curr->next;
+				}
 			}
+			//head->written = 1;
 		}
-		printf("post write-fault: \n");
-		page_table_print(pt);
-		print_list();
+		//printf("post write-fault: \n");
+		//page_table_print(pt);
+		//print_list();
 		//printf("NO WRITE ACCESS: page fault on page #%d\n",page);
 		return;
 	}			
@@ -300,6 +368,7 @@ int main( int argc, char *argv[] )
 	num_disk_write = 0;
 	num_disk_read = 0;
 	page_fault = 0;
+	writer = 0;
 
 	// Make the array bigger
 	int* more_frames = realloc(frames, nframes * sizeof(int));
