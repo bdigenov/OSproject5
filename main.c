@@ -18,35 +18,24 @@ how to use the page table and disk interfaces.
 
 
 //Define struct for keeping track of page/frame pairs
-typedef struct Node {
+struct node_t {
     int page;
-    struct Node *next;
-}node_t;
-/*struct List {
-	struct Node *head;
-	List();
-	~List();
-	void push_front(const int page);
+	int written;
+    struct node_t *next;
+	struct node_t *prev;
 };
 
-List::List(){
-	head = 0;
-}
-List::~List(){
-	Node* current = head;
-    while( current != 0 ) {
-        Node* next = current->next;
-        free(current);
-        current = next;
-    }
-    head = 0;
-}*/
-void push_front(const int page, node_t **head){
-	node_t *tmp = malloc(sizeof(*tmp));
+void push_front(int page, struct node_t **head){
+	printf("int push_front with page %i\n", page);
+	struct node_t *tmp = malloc(sizeof(struct node_t));
 	tmp->page = page;
-	tmp->next = head;
-	head = tmp;
+	tmp->written = 0;
+	tmp->next = *head;
+	tmp->prev = 0;
+	*head = tmp;
 }
+
+
 
 
 //Define Globals
@@ -59,30 +48,61 @@ char *virtmem;		//Virtual Memory storage
 char *physmem;		//Physical Memory storage
 int fill_count;		//Amount of frames that have been filled
 int* frames;		//Frame storage
+//int* page_values;
 int num_disk_write; //Counts number of writes to disk
 int num_disk_read;	//Counts number of reads from disk
 int page_fault;		//Counts number of page faults 
 
-node_t *head = NULL;
-head = malloc(sizeof(node_t));
+int headset;
+struct node_t *head = NULL;
+//struct node_t *head = malloc(sizeof(struct node_t));
+//head = (struct node_t *) malloc(sizeof(struct node_t));
+
+void print_list(){
+	struct node_t *curr = head;
+	while(curr != 0){
+		printf("%i, ", curr->page);
+		curr = curr->next;
+	}
+	printf("\n");
+}
+
 void page_fault_handler( struct page_table *pt, int page ){
 	int bits;
 	int frame;
 	page_fault++;
+	//printf("in pfh\n");
 
 	page_table_get_entry(pt, page, &frame, &bits);
+	//printf("ptge called\n");
 	if (bits == 0) { 
 		//Fill up page table initially
 		if (fill_count < nframes){
+			//printf("here\n");
 			page_table_set_entry(pt, page, fill_count, PROT_READ); 
 			frames[fill_count] = page;
 			disk_read(disk, page, &physmem[fill_count*PAGE_SIZE]);
 			num_disk_read++;
 			fill_count++;
-			page_table_print(pt);
+			//page_table_print(pt);
 			if(!strcmp(algorithm,"custom")) {
-				push_front(page, head);
+				printf("in custom\n");
+				if(head == NULL){
+					head = malloc(sizeof(struct node_t));
+					printf("malloc done \n");
+					headset = 1;
+					head->page = page;
+					head->written = 0;
+					head->next = 0;
+					head->prev = 0;
+					printf("head is set\n");
+				} else {
+					
+					push_front(page, &head);
+				}
+				
 			}
+			//printf("before return\n");
 			return;
 		}
 
@@ -105,7 +125,7 @@ void page_fault_handler( struct page_table *pt, int page ){
 
 				else{
 					//If it has been written to, write it back to disk 
-					page_table_set_entry(pt, page, frame, PROT_WRITE | PROT_READ);
+					page_table_set_entry(pt, page, frame, PROT_READ);
 					disk_read(disk, page, &physmem[frame*PAGE_SIZE]);
 					num_disk_read++;
 					page_table_set_entry(pt, frames[n], frame, 0);
@@ -131,7 +151,7 @@ void page_fault_handler( struct page_table *pt, int page ){
 
 				else{
 					//If it has been written to, write it back to disk 
-					page_table_set_entry(pt, page, frame, PROT_WRITE | PROT_READ);
+					page_table_set_entry(pt, page, frame, PROT_READ);
 					disk_read(disk, page, &physmem[frame*PAGE_SIZE]);
 					num_disk_read++;
 					page_table_set_entry(pt, frames[n], frame, 0);
@@ -144,35 +164,79 @@ void page_fault_handler( struct page_table *pt, int page ){
 			}
 			
 			else if(!strcmp(algorithm,"custom")) {
-				//Implement random algorithm
 				int replacepage;
-				node_t *curr = head;
-				node_t *tmp = malloc(sizeof(*tmp));
+				struct node_t *curr = head;
+				struct node_t *tmp = malloc(sizeof(*tmp));
+				int prev = 0;
+				int prevworked = 0;
 				while(curr->next != 0){
 					if(curr->next->next == 0){
-						replacepage = curr->next->page;
-						free(curr->next);
-						curr->next = null;
 						
-						page_table_get_entry(pt, replacepage, &frame, &bits);
-						if(bits == 2){
-							disk_write(disk, replacepage, &physmem[frame*PAGE_SIZE]);
+						if(curr->next->written == 0 || prev){
+							replacepage = curr->next->page;
+							free(curr->next);
+							curr->next = 0;
+							
+							page_table_get_entry(pt, replacepage, &frame, &bits);
+							if(bits == 3){
+								disk_write(disk, replacepage, &physmem[frame*PAGE_SIZE]);
+								num_disk_write++;
+							}
+							disk_read(disk, page, &physmem[frame*PAGE_SIZE]);
+							num_disk_read++;
+							page_table_set_entry(pt, page, frame, PROT_READ);
+							page_table_set_entry(pt, replacepage, frame, 0);
+							tmp->page = page;
+							tmp->written = 0;
+							tmp->next = head;
+							head->prev = tmp;
+							tmp->prev = 0;
+							head = tmp;
+							break;
+						} else {
+							while(curr->prev != 0){
+								if(curr->written == 0){
+									replacepage = curr->page;
+									
+									curr->prev->next = curr->next;
+									curr->next->prev = curr->prev;
+									free(curr);
+									
+									page_table_get_entry(pt, replacepage, &frame, &bits);
+									if(bits == 3){
+										disk_write(disk, replacepage, &physmem[frame*PAGE_SIZE]);
+										num_disk_write++;
+									}
+									disk_read(disk, page, &physmem[frame*PAGE_SIZE]);
+									num_disk_read++;
+									page_table_set_entry(pt, page, frame, PROT_READ);
+									page_table_set_entry(pt, replacepage, frame, 0);
+									tmp->page = page;
+									tmp->written = 0;
+									tmp->next = head;
+									head->prev = tmp;
+									tmp->prev = 0;
+									head = tmp;
+									prevworked = 1;
+									break;
+								}
+								curr = curr->prev;
+							}
+							if(prevworked){
+								break;
+							} else {
+								prev = 1;
+							}
 						}
-						disk_read(disk, page, &physmem[frame*PAGE_SIZE]);
-						page_table_set_entry(pt, page, frame, PROT_READ);
-						page_table_set_entry(pt, replacepage, frame, 0);
-						tmp->page = page;
-						tmp->next = head;
-						head = tmp;
-						break;
+						
+						
 					}
 					curr = curr->next;
 				}
-				
-				
-				
-				
-				printf("custom\n");
+				printf("PAGE TABLE:\n");
+				page_table_print(pt);
+				printf("linked list:\n");
+				print_list();
 				return;
 			}
 
@@ -185,26 +249,34 @@ void page_fault_handler( struct page_table *pt, int page ){
 	}
 
 	else if (bits == 1) { //in memory but READ_ONLY - since there was an error it is trying to write - must change permissions 
+		//printf("its here with bits = 1\n");
 		page_table_set_entry(pt, page, frame, PROT_READ|PROT_WRITE); //If pagefault was lack of write access, set write access 
 		
 		if(!strcmp(algorithm,"custom")){
-			node_t *curr = head;
-			node_t *tmp = malloc(sizeof(*tmp));
-			while(curr != null){ // move used frame to the front of the linked list
-				if(curr->next->page == page){
-					tmp->page = page;
-					tmp->next = curr->next->next;
-					free(curr->next);
-					curr->next = tmp->next;
-					tmp->next = head;
-					head = tmp;
-					break;
-				}
+			struct node_t *curr = head;
+			struct node_t *tmp = malloc(sizeof(*tmp));
+			while(curr != 0){ // move used frame to the front of the linked list
+				if(curr->next != 0){
+					if(curr->next->page == page){
+						tmp->page = page;
+						tmp->next = curr->next->next;
+						free(curr->next);
+						curr->next = tmp->next;
+						tmp->next = head;
+						tmp->prev = 0;
+						head->prev = tmp;
+						tmp->written = 1;
+						head = tmp;
+						break;
+					}
+				} 
+				
 				curr = curr->next;
 			}
 		}
-		
-		
+		printf("post write-fault: \n");
+		page_table_print(pt);
+		print_list();
 		//printf("NO WRITE ACCESS: page fault on page #%d\n",page);
 		return;
 	}			
@@ -213,6 +285,7 @@ void page_fault_handler( struct page_table *pt, int page ){
 
 int main( int argc, char *argv[] )
 {
+	headset = 0;
 	fill_count = 0;
 	if(argc!=5) {
 		printf("use: virtmem <npages> <nframes> <rand|fifo|custom> <sort|scan|focus>\n");
@@ -231,7 +304,14 @@ int main( int argc, char *argv[] )
 	// Make the array bigger
 	int* more_frames = realloc(frames, nframes * sizeof(int));
 	frames = more_frames;
-
+	
+	/*int* more_page_values = realloc(page_values, npages * sizeof(int));
+	page_values = more_page_values;
+	int p;
+	for(p=0; p<npages; p++){
+		page_value[p] = rand()%10;
+	}
+*/
 	disk = disk_open("myvirtualdisk",npages);
 	if(!disk) {
 		fprintf(stderr,"couldn't create virtual disk: %s\n",strerror(errno));
