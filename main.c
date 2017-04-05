@@ -201,75 +201,7 @@ void page_fault_handler( struct page_table *pt, int page ){
 						//head = tmp;
 						//curr->written = 0;
 						//curr->next->page = page;
-						break;
-						
-						/*if(curr->next->written == 0 || prev == 1){
-							replacepage = curr->next->page;
-							free(curr->next);
-							curr->next = 0;
-							
-							page_table_get_entry(pt, replacepage, &frame, &bits);
-							if(bits == 3){
-								disk_write(disk, replacepage, &physmem[frame*PAGE_SIZE]);
-								num_disk_write++;
-							}
-							disk_read(disk, page, &physmem[frame*PAGE_SIZE]);
-							num_disk_read++;
-							page_table_set_entry(pt, page, frame, PROT_READ);
-							page_table_set_entry(pt, replacepage, frame, 0);
-							
-							tmp->page = page;
-							tmp->written = 0;
-							//tmp->next = head;
-							tmp->next = currfollow->next;
-							tmp->prev = currfollow;
-							currfollow->next = currfollow->next->next;
-							currfollow->next->prev = tmp;
-							//head->prev = tmp;
-							//tmp->prev = 0;
-							//head = tmp;
-							//curr->written = 0;
-							//curr->next->page = page;
-							break;
-						} else {
-							while(curr != 0){
-								if(curr->written == 0){
-									replacepage = curr->page;
-									
-									curr->prev->next = curr->next;
-									curr->next->prev = curr->prev;
-									free(curr);
-									
-									page_table_get_entry(pt, replacepage, &frame, &bits);
-									if(bits == 3){
-										disk_write(disk, replacepage, &physmem[frame*PAGE_SIZE]);
-										num_disk_write++;
-									}
-									disk_read(disk, page, &physmem[frame*PAGE_SIZE]);
-									num_disk_read++;
-									page_table_set_entry(pt, page, frame, PROT_READ);
-									page_table_set_entry(pt, replacepage, frame, 0);
-									tmp->page = page;
-									tmp->written = 0;
-									tmp->next = head;
-									head->prev = tmp;
-									tmp->prev = 0;
-									head = tmp;
-									prevworked = 1;
-									break;
-								}
-								curr = curr->prev;
-							}
-							if(prevworked == 1){
-								break;
-							} else {
-								prev = 1;
-								resethead = 1;
-								curr = head;
-							}
-						}*/
-						
-						
+						break;					
 					}
 					curr = curr->next;
 					if(half){
@@ -278,20 +210,6 @@ void page_fault_handler( struct page_table *pt, int page ){
 					} else {
 						half = 1;
 					}
-					/*if(resethead){
-						curr = head;
-						currfollow = curr;
-						resethead = 0;
-					} else {
-						if(half){
-							currfollow = currfollow->next;
-							half = 0;
-						} else {
-							half = 1;
-						}
-						curr = curr->next;
-					}*/
-					
 				}
 				//printf("PAGE TABLE (non write fault):\n");
 				//page_table_print(pt);
