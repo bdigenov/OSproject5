@@ -17,10 +17,35 @@ how to use the page table and disk interfaces.
 #include <time.h>
 
 //Define struct for keeping track of page/frame pairs
-/*struct pair {
+typedef struct Node {
     int page;
-    int frame;
-};*/
+    struct Node *next;
+}node_t;
+/*struct List {
+	struct Node *head;
+	List();
+	~List();
+	void push_front(const int page);
+};
+
+List::List(){
+	head = 0;
+}
+List::~List(){
+	Node* current = head;
+    while( current != 0 ) {
+        Node* next = current->next;
+        free(current);
+        current = next;
+    }
+    head = 0;
+}*/
+void push_front(const int page, node_t **head){
+	node_t *tmp = malloc(sizeof(*tmp));
+	tmp->page = page;
+	tmp->next = head;
+	head = tmp;
+}
 
 //Define Globals
 int npages;
@@ -32,10 +57,14 @@ char *virtmem;
 char *physmem;
 int fill_count;
 int* frames;
+//struct List lru;
+node_t *head = NULL;
+head = malloc(sizeof(node_t));
 
 void page_fault_handler( struct page_table *pt, int page ){
 	int bits;
 	int frame;
+	
 
 	page_table_get_entry(pt, page, &frame, &bits);
 	printf("Frame: %d, Bits: %d\n", frame,bits);
@@ -49,6 +78,9 @@ void page_fault_handler( struct page_table *pt, int page ){
 			printf("NOT LOADED: page fault on page #%d\n",page);
 			fill_count++;
 			page_table_print(pt);
+			if(!strcmp(algorithm,"custom")) {
+				push_front(page, head);
+			}
 			return;
 		}
 
@@ -83,13 +115,63 @@ void page_fault_handler( struct page_table *pt, int page ){
 				return;
 			}
 			else if(!strcmp(algorithm,"fifo")) {
-				//Implement random algorithm
-				printf("fifo\n");
+				
+				int n = fill_count % nframes;
+				printf("SENT TO FRAME: %d\n",n);
+
+				//Check if the frame getting kicked out has been written to
+				page_table_get_entry(pt, frames[n], &frame, &bits);
+				if(bits == 2) {
+					disk_write(disk, frames[n], &physmem[frame*PAGE_SIZE]);
+					disk_read(disk, page, &physmem[frame*PAGE_SIZE]);
+					page_table_set_entry(pt, page, frame, PROT_READ);
+					page_table_set_entry(pt, frames[n], frame, 0);
+					printf("FRAME #%d USED TO HOLD %d\n",frame, frames[n]);
+					frames[n] = page; //Update the page frame tracker 
+					printf("FRAME #%d NOW HOLDS %d\n", frame, frames[n]);
+				}
+
+				else{
+					//If it has been written to, write it back to disk 
+					page_table_set_entry(pt, page, frame, PROT_WRITE | PROT_READ);
+					disk_read(disk, page, &physmem[frame*PAGE_SIZE]);
+					page_table_set_entry(pt, frames[n], frame, 0);
+					frames[n] = page; //Update the page frame tracker 
+					page_table_print(pt);
+				}
+				fill_count++;
 				return;
 			}
 			
 			else if(!strcmp(algorithm,"custom")) {
 				//Implement random algorithm
+				int replacepage;
+				node_t *curr = head;
+				node_t *tmp = malloc(sizeof(*tmp));
+				while(curr->next != 0){
+					if(curr->next->next == 0){
+						replacepage = curr->next->page;
+						free(curr->next);
+						curr->next = null;
+						
+						page_table_get_entry(pt, replacepage, &frame, &bits);
+						if(bits == 2){
+							disk_write(disk, replacepage, &physmem[frame*PAGE_SIZE]);
+						}
+						disk_read(disk, page, &physmem[frame*PAGE_SIZE]);
+						page_table_set_entry(pt, page, frame, PROT_READ);
+						page_table_set_entry(pt, replacepage, frame, 0);
+						tmp->page = page;
+						tmp->next = head;
+						head = tmp;
+						break;
+					}
+					curr = curr->next;
+				}
+				
+				
+				
+				
 				printf("custom\n");
 				return;
 			}
@@ -104,6 +186,25 @@ void page_fault_handler( struct page_table *pt, int page ){
 
 	else if (bits == 1) { //in memory but READ_ONLY - since there was an error it is trying to write - must change permissions 
 		page_table_set_entry(pt, page, frame, PROT_READ|PROT_WRITE); //If pagefault was lack of write access, set write access 
+		
+		if(!strcmp(algorithm,"custom")){
+			node_t *curr = head;
+			node_t *tmp = malloc(sizeof(*tmp));
+			while(curr != null){ // move used frame to the front of the linked list
+				if(curr->next->page == page){
+					tmp->page = page;
+					tmp->next = curr->next->next;
+					free(curr->next);
+					curr->next = tmp->next;
+					tmp->next = head;
+					head = tmp;
+					break;
+				}
+				curr = curr->next;
+			}
+		}
+		
+		
 		printf("NO WRITE ACCESS: page fault on page #%d\n",page);
 		return;
 	}			
