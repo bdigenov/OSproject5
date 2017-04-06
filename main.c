@@ -309,6 +309,7 @@ int main( int argc, char *argv[] )
 	printf("PAGE FAULTS: %d\n", page_fault);
 	printf("DISK WRITES: %d\n", num_disk_write);
 	printf("DISK READS: %d\n",num_disk_read);
+	//printf("%d, %d, %d, %d\n", nframes, page_fault, num_disk_read,num_disk_write);
 	page_table_delete(pt);
 	disk_close(disk);
 
